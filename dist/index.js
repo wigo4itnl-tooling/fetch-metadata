@@ -31456,7 +31456,7 @@ function branchNameToDirectoryName(chunks, delimiter, updatedDependencies, depen
 }
 async function parse3(commitMessage, body, branchName, mainBranch, lookup, getScore) {
   const bumpFragment = commitMessage.match(/^Bumps .* from (?<from>v?\d[^ ]*) to (?<to>v?\d[^ ]*)\.$/m);
-  const updateFragment = commitMessage.match(/^Update .* requirement from \S*? ?(?<from>v?\d\S*) to \S*? ?(?<to>v?\d\S*)$/m);
+  const updateFragment = commitMessage.match(/^Update .* requirement from \S*? ?(?<from>v?\d\S*) to \S*? ?(?<to>v?\d\S*)/m);
   const yamlFragment = commitMessage.match(/^-{3}\n(?<dependencies>[\S|\s]*?)\n^\.{3}\n/m);
   const groupName = commitMessage.match(/dependency-group:\s(?<name>\S*)/m);
   const newMaintainer = !!body.match(/Maintainer changes/m);
@@ -31472,9 +31472,13 @@ async function parse3(commitMessage, body, branchName, mainBranch, lookup, getSc
     if (data["updated-dependencies"]) {
       const updatedVersions = parseMetadataLinks(commitMessage);
       const dirname = branchNameToDirectoryName(chunks, delim, data["updated-dependencies"], dependencyGroup);
+      const nameCounters = /* @__PURE__ */ new Map();
       return await Promise.all(data["updated-dependencies"].map(async (dependency, index) => {
         const dependencyName = dependency["dependency-name"];
-        const updatedVersion = updatedVersions.get(dependencyName);
+        const nameIndex = nameCounters.get(dependencyName) ?? 0;
+        nameCounters.set(dependencyName, nameIndex + 1);
+        const updatedVersionList = updatedVersions.get(dependencyName);
+        const updatedVersion = updatedVersionList?.[nameIndex];
         const lastVersion = updatedVersion?.prevVersion || (index === 0 ? prev : "");
         const nextVersion = dependency["dependency-version"] || updatedVersion?.newVersion || (index === 0 ? next : "");
         const updateType = dependency["update-type"] || calculateUpdateType(lastVersion, nextVersion);
@@ -31505,10 +31509,16 @@ function parseMetadataLinks(commitMessage) {
     const groups = match.groups;
     if (groups) {
       const dependencyName = groups.dependencyName;
-      updates.set(dependencyName, {
+      const entry = {
         prevVersion: groups.from ?? "",
         newVersion: groups.to
-      });
+      };
+      const existing = updates.get(dependencyName);
+      if (existing) {
+        existing.push(entry);
+      } else {
+        updates.set(dependencyName, [entry]);
+      }
     }
   }
   return updates;
